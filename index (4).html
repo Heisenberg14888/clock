@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Исследование: Время в 5 классе</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+
+    <style>
+        :root { --primary: #3498db; --success: #2ecc71; --error: #e74c3c; --dark: #2c3e50; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        
+        /* Циферблат */
+        #clock-face { width: 220px; height: 220px; border: 10px solid var(--dark); border-radius: 50%; position: relative; margin: 20px auto; background: white; }
+        .hand { position: absolute; bottom: 50%; left: 50%; transform-origin: bottom; background: var(--dark); border-radius: 5px; transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .hour-hand { width: 8px; height: 60px; margin-left: -4px; z-index: 3; }
+        .min-hand { width: 4px; height: 90px; margin-left: -2px; background: var(--error); z-index: 2; }
+        .number { position: absolute; width: 100%; height: 100%; text-align: center; font-weight: bold; font-size: 1.1rem; padding: 5px; box-sizing: border-box; }
+
+        /* Кнопки и ввод */
+        .options { display: grid; gap: 10px; margin-top: 25px; }
+        button { padding: 14px; border: 2px solid var(--primary); background: white; color: var(--primary); border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 16px; transition: 0.2s; }
+        button:hover:not(:disabled) { background: var(--primary); color: white; }
+        button:disabled { border-color: #ddd; color: #bbb; cursor: not-allowed; }
+        input { padding: 15px; width: 90%; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 12px; font-size: 16px; outline: none; }
+        input:focus { border-color: var(--primary); }
+        
+        .hidden { display: none; }
+        #message { height: 24px; margin: 15px 0; font-weight: bold; }
+        .loader { color: var(--primary); font-style: italic; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen" class="container">
+        <h2 style="color: var(--dark)">Проверка знаний</h2>
+        <p>Тест для учеников 5-х классов</p>
+        <input type="text" id="student-name" placeholder="Имя и Фамилия">
+        <button onclick="startTest()" style="width: 100%">Начать исследование</button>
+    </div>
+
+    <div id="game-screen" class="container hidden">
+        <div id="status" style="color: #7f8c8d; font-size: 14px;">Вопрос <span id="current-step">1</span> из 10</div>
+        <div id="clock-face">
+            <div id="hour-hand" class="hand hour-hand"></div>
+            <div id="min-hand" class="hand min-hand"></div>
+        </div>
+        <div id="message"></div>
+        <div class="options" id="options-container"></div>
+    </div>
+
+    <div id="result-screen" class="container hidden">
+        <h2 id="final-title">Готово!</h2>
+        <p id="summary"></p>
+        <div id="save-status" class="loader">Сохранение в базу данных...</div>
+        <br>
+        <button onclick="location.reload()" style="width: 100%">Завершить сессию</button>
+    </div>
+
+    <script>
+        // Твой Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyA2xdzxONZbcHKVaqIy4jFrnvIAq4UQbSo",
+            authDomain: "clock-tets.firebaseapp.com",
+            databaseURL: "https://clock-tets-default-rtdb.firebaseio.com",
+            projectId: "clock-tets",
+            storageBucket: "clock-tets.firebasestorage.app",
+            messagingSenderId: "831113812297",
+            appId: "1:831113812297:web:3dad16cda5c66d2fb16298",
+            measurementId: "G-P0CNQZWVT3"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        let step = 1, score = 0, studentName = "", canClick = true;
+        let correctTimeStr = "";
+        let details = []; // Для хранения подробных логов теста
+
+        const hoursText = ["двенадцать", "час", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять", "десять", "одиннадцать"];
+        const hoursGenitive = ["двенадцати", "часа", "двух", "трех", "четырех", "пяти", "шести", "семи", "восьми", "девяти", "десяти", "одиннадцати"];
+
+        function startTest() {
+            studentName = document.getElementById('student-name').value.trim();
+            if (studentName.length < 2) return alert("Пожалуйста, введите полное имя.");
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            generateClock();
+        }
+
+        function getTimeText(h, m) {
+            h = h % 12;
+            if (m === 0) return `${hoursText[h]} ровно`;
+            if (m === 30) return `половина ${hoursGenitive[(h + 1) % 12]}`;
+            if (m > 30) return `без ${60 - m} минут ${hoursText[(h + 1) % 12]}`;
+            return `${m} минут ${hoursGenitive[(h + 1) % 12]}`;
+        }
+
+        function generateClock() {
+            if (step > 10) return finishAndSave();
+            
+            canClick = true;
+            document.getElementById('current-step').innerText = step;
+            document.getElementById('message').innerText = "Который час?";
+            document.getElementById('message').style.color = "var(--dark)";
+
+            let h = Math.floor(Math.random() * 12);
+            let m = Math.floor(Math.random() * 12) * 5;
+
+            document.getElementById('min-hand').style.transform = `rotate(${m * 6}deg)`;
+            document.getElementById('hour-hand').style.transform = `rotate(${(h * 30) + (m * 0.5)}deg)`;
+
+            const digital = `${h === 0 ? 12 : h}:${m < 10 ? '0'+m : m}`;
+            correctTimeStr = (step > 5) ? getTimeText(h, m) : digital;
+
+            const container = document.getElementById('options-container');
+            container.innerHTML = '';
+            let answers = [correctTimeStr];
+
+            while (answers.length < 4) {
+                let rh = Math.floor(Math.random() * 12), rm = Math.floor(Math.random() * 12) * 5;
+                let opt = (step > 5) ? getTimeText(rh, rm) : `${rh === 0 ? 12 : rh}:${rm < 10 ? '0'+rm : rm}`;
+                if (!answers.includes(opt)) answers.push(opt);
+            }
+
+            answers.sort(() => Math.random() - 0.5).forEach(text => {
+                const btn = document.createElement('button');
+                btn.innerText = text;
+                btn.onclick = () => checkAnswer(text);
+                container.appendChild(btn);
+            });
+        }
+
+        function checkAnswer(selected) {
+            if (!canClick) return;
+            canClick = false;
+
+            const isCorrect = (selected === correctTimeStr);
+            if (isCorrect) {
+                score++;
+                document.getElementById('message').innerText = "Верно! ✨";
+                document.getElementById('message').style.color = "var(--success)";
+            } else {
+                document.getElementById('message').innerText = "Ошибка ❌";
+                document.getElementById('message').style.color = "var(--error)";
+            }
+
+            // Сохраняем детали вопроса
+            details.push({
+                question_num: step,
+                correct_answer: correctTimeStr,
+                user_answer: selected,
+                is_correct: isCorrect
+            });
+
+            step++;
+            setTimeout(generateClock, 600);
+        }
+
+        function finishAndSave() {
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('result-screen').classList.remove('hidden');
+            document.getElementById('summary').innerText = `${studentName}, твой результат: ${score} из 10.`;
+
+            // Отправка в Firebase
+            const resultRef = db.ref('results').push();
+            resultRef.set({
+                name: studentName,
+                total_score: score,
+                test_details: details,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            }).then(() => {
+                document.getElementById('save-status').innerText = "Результаты сохранены в облако!";
+                document.getElementById('save-status').style.color = "var(--success)";
+            }).catch(e => {
+                document.getElementById('save-status').innerText = "Ошибка связи с базой.";
+                console.error(e);
+            });
+        }
+
+        // Инициализация циферблата
+        const face = document.getElementById('clock-face');
+        for (let i = 1; i <= 12; i++) {
+            const num = document.createElement('div');
+            num.className = 'number';
+            num.style.transform = `rotate(${i * 30}deg)`;
+            num.innerHTML = `<span style="display:inline-block; transform:rotate(-${i*30}deg)">${i}</span>`;
+            face.appendChild(num);
+        }
+    </script>
+</body>
+</html>
