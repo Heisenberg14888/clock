@@ -11,7 +11,7 @@
     <style>
         :root { --primary: #3498db; --success: #2ecc71; --error: #e74c3c; --dark: #2c3e50; }
         body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .container { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 420px; text-align: center; }
         
         #clock-face { width: 220px; height: 220px; border: 10px solid var(--dark); border-radius: 50%; position: relative; margin: 20px auto; background: white; }
         .hand { position: absolute; bottom: 50%; left: 50%; transform-origin: bottom; background: var(--dark); border-radius: 5px; transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -36,16 +36,13 @@
     <div id="login-screen" class="container">
         <h2 style="color: var(--dark)">Тест по часам</h2>
         <p>Введи свои данные:</p>
-        
         <input type="text" id="student-name" placeholder="Имя и Фамилия">
-        
         <select id="student-class">
             <option value="" disabled selected>Выбери класс</option>
             <option value="5">5 класс</option>
             <option value="6">6 класс</option>
             <option value="7">7 класс</option>
         </select>
-
         <button onclick="startTest()" style="width: 100%">Начать</button>
     </div>
 
@@ -68,7 +65,6 @@
     </div>
 
     <script>
-        // Твой Firebase Config (уже вставлен)
         const firebaseConfig = {
             apiKey: "AIzaSyA2xdzxONZbcHKVaqIy4jFrnvIAq4UQbSo",
             authDomain: "clock-tets.firebaseapp.com",
@@ -87,27 +83,46 @@
         let correctTimeStr = "";
         let details = [];
 
-        const hoursText = ["двенадцать", "час", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять", "десять", "одиннадцать"];
-        const hoursGenitive = ["двенадцати", "часа", "двух", "трех", "четырех", "пяти", "шести", "семи", "восьми", "девяти", "десяти", "одиннадцати"];
+        // Словари для корректного русского языка
+        const hoursNominal = ["двенадцать", "час", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять", "десять", "одиннадцать"];
+        const hoursGenitive = ["двенадцати", "первого", "второго", "третьего", "четвертого", "пятого", "шестого", "седьмого", "восьмого", "девятого", "десятого", "одиннадцатого"];
+        const hoursForWithout = ["двенадцать", "час", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять", "десять", "одиннадцать"];
 
         function startTest() {
             studentName = document.getElementById('student-name').value.trim();
             studentClass = document.getElementById('student-class').value;
-            
             if (studentName.length < 2) return alert("Введите имя!");
             if (!studentClass) return alert("Выберите класс!");
-            
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             generateClock();
         }
 
         function getTimeText(h, m) {
-            h = h % 12;
-            if (m === 0) return `${hoursText[h]} ровно`;
-            if (m === 30) return `половина ${hoursGenitive[(h + 1) % 12]}`;
-            if (m > 30) return `без ${60 - m} минут ${hoursText[(h + 1) % 12]}`;
-            return `${m} минут ${hoursGenitive[(h + 1) % 12]}`;
+            h = h % 12; // 0-11
+            let nextH = (h + 1) % 12;
+
+            // Ровно (например, "Двенадцать ровно")
+            if (m === 0) return `${hoursNominal[h].charAt(0).toUpperCase() + hoursNominal[h].slice(1)} ровно`;
+
+            // Половина (например, "Половина второго")
+            if (m === 30) return `Половина ${hoursGenitive[nextH]}`;
+
+            // До 30 минут (например, "Десять минут пятого")
+            if (m < 30) {
+                let minsWord = "минут";
+                if (m % 10 === 1 && m !== 11) minsWord = "минута";
+                else if ([2, 3, 4].includes(m % 10) && ![12, 13, 14].includes(m)) minsWord = "минуты";
+                return `${m} ${minsWord} ${hoursGenitive[nextH]}`;
+            }
+
+            // После 30 минут (например, "Без десяти пять")
+            let minsLeft = 60 - m;
+            let minsLeftText = "";
+            const minsGenitive = { 5: "пяти", 10: "десяти", 15: "пятнадцати", 20: "двадцати", 25: "двадцати пяти" };
+            minsLeftText = minsGenitive[minsLeft] || `${minsLeft} минут`;
+            
+            return `Без ${minsLeftText} ${hoursNominal[nextH]}`;
         }
 
         function generateClock() {
@@ -124,6 +139,7 @@
             document.getElementById('min-hand').style.transform = `rotate(${m * 6}deg)`;
             document.getElementById('hour-hand').style.transform = `rotate(${(h * 30) + (m * 0.5)}deg)`;
 
+            // С 1 по 5 вопрос — цифры, с 6 по 10 — текст
             const digital = `${h === 0 ? 12 : h}:${m < 10 ? '0'+m : m}`;
             correctTimeStr = (step > 5) ? getTimeText(h, m) : digital;
 
@@ -132,7 +148,8 @@
             let answers = [correctTimeStr];
 
             while (answers.length < 4) {
-                let rh = Math.floor(Math.random() * 12), rm = Math.floor(Math.random() * 12) * 5;
+                let rh = Math.floor(Math.random() * 12);
+                let rm = Math.floor(Math.random() * 12) * 5;
                 let opt = (step > 5) ? getTimeText(rh, rm) : `${rh === 0 ? 12 : rh}:${rm < 10 ? '0'+rm : rm}`;
                 if (!answers.includes(opt)) answers.push(opt);
             }
@@ -159,15 +176,9 @@
                 document.getElementById('message').style.color = "var(--error)";
             }
 
-            details.push({
-                question: step,
-                correct: correctTimeStr,
-                user: selected,
-                is_correct: isCorrect
-            });
-
+            details.push({ question: step, correct: correctTimeStr, user: selected, is_correct: isCorrect });
             step++;
-            setTimeout(generateClock, 600);
+            setTimeout(generateClock, 800);
         }
 
         function finishAndSave() {
@@ -190,6 +201,7 @@
             });
         }
 
+        // Рисуем цифры на циферблате
         const face = document.getElementById('clock-face');
         for (let i = 1; i <= 12; i++) {
             const num = document.createElement('div');
